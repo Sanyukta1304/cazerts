@@ -59,8 +59,7 @@ export default function WishlistPage() {
               </button>
               <div
                 className="aspect-[4/3] bg-cover bg-center"
-                style={{ backgroundImage: `url('${item.image}')` }}
-              />
+                style={{ backgroundImage: `url('${item.image_url}')` }}              />
               <div className="p-6">
                 <h3 className="text-lg font-bold text-black mb-2">
                   {item.name}
