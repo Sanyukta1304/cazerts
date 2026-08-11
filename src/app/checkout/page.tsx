@@ -8,6 +8,7 @@ import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import RazorpayButton from "@/components/checkout/RazorpayButton";
 import { submitOrder } from "@/lib/orders";
+import { getStoreStatus, StoreStatus } from "@/lib/store-status";
 
 const COUPONS: Record<string, number> = {
   SWEET10: 10,
@@ -55,6 +56,21 @@ export default function CheckoutPage() {
   const [distance, setDistance] = useState<"within4" | "beyond4">("within4");
   const [locationId, setLocationId] = useState(STORE_LOCATIONS[0].id);
 
+  const [storeStatus, setStoreStatus] = useState<StoreStatus | null>(null);
+useEffect(() => {
+  let cancelled = false;
+  getStoreStatus(locationId)
+    .then((s) => { if (!cancelled) setStoreStatus(s); })
+    .catch(() => { if (!cancelled) setStoreStatus(null); });
+  const interval = setInterval(() => {
+    getStoreStatus(locationId)
+      .then((s) => { if (!cancelled) setStoreStatus(s); })
+      .catch(() => {});
+  }, 60_000);
+  return () => { cancelled = true; clearInterval(interval); };
+}, [locationId]);
+const isStoreClosed = storeStatus !== null && !storeStatus.isOpen;
+
   const [form, setForm] = useState({
     name: "",
     address: "",
@@ -93,6 +109,7 @@ export default function CheckoutPage() {
 
   const isFormValid =
     !isDeliveryBlocked &&
+    !isStoreClosed &&
     (needsAddress
       ? form.name.trim() !== "" &&
         form.address.trim() !== "" &&
@@ -260,6 +277,12 @@ export default function CheckoutPage() {
             ))}
           </div>
         </div>
+        {isStoreClosed && (
+          <div className="bg-red-50 border border-red-200 text-red-600 text-sm font-semibold px-5 py-4 rounded-2xl mb-6">
+            This store isn't taking orders right now. We're open daily from 2:00 PM – 11:59 PM —
+            please check back then.
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
           {/* Left: Details + Payment */}
