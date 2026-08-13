@@ -14,6 +14,10 @@ const RANK_STYLES = [
 
 const AVATAR_BG = ["#f5c451", "#7dd3c0", "#f4978e", "#a3c9f9", "#c8b6ff"];
 
+// Crown/count pill — solid, high-contrast (was bg-yellow-400/10 + text-yellow-300, nearly invisible on cream)
+const CROWN_PILL =
+  "flex-shrink-0 flex items-center gap-2 bg-gradient-to-r from-amber-400 to-yellow-500 border border-amber-500 px-4 py-2 rounded-full shadow-sm";
+
 export default function LeaderboardPage() {
   const { user, isLoggedIn } = useAuth();
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -132,9 +136,9 @@ export default function LeaderboardPage() {
                     </p>
                   </div>
 
-                  <div className="flex-shrink-0 flex items-center gap-2 bg-yellow-400/10 border border-yellow-400/30 px-4 py-2 rounded-full">
-                    <Crown size={18} className="text-yellow-400" />
-                    <span className="font-extrabold text-lg text-yellow-300">{entry.crowns}</span>
+                  <div className={CROWN_PILL}>
+                    <Crown size={18} className="text-black" />
+                    <span className="font-extrabold text-lg text-black">{entry.crowns}</span>
                   </div>
                 </motion.div>
               );
@@ -161,9 +165,9 @@ export default function LeaderboardPage() {
                 {user?.name} · ₹{myRank.totalSpent.toLocaleString("en-IN")} spent all-time
               </p>
             </div>
-            <div className="flex items-center gap-2 bg-yellow-400/10 border border-yellow-400/30 px-4 py-2 rounded-full">
-              <Crown size={18} className="text-yellow-400" />
-              <span className="font-extrabold text-lg text-yellow-300">{myRank.crowns}</span>
+            <div className={CROWN_PILL}>
+              <Crown size={18} className="text-black" />
+              <span className="font-extrabold text-lg text-black">{myRank.crowns}</span>
             </div>
           </motion.div>
         )}
