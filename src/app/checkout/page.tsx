@@ -9,6 +9,7 @@ import { useAuth } from "@/context/AuthContext";
 import RazorpayButton from "@/components/checkout/RazorpayButton";
 import { submitOrder } from "@/lib/orders";
 import { getStoreStatus, StoreStatus } from "@/lib/store-status";
+import { getStockForProductIds, decrementStock } from "@/lib/products";
 
 const COUPONS: Record<string, number> = {
   SWEET10: 10,
@@ -71,6 +72,33 @@ useEffect(() => {
 }, [locationId]);
 const isStoreClosed = storeStatus !== null && !storeStatus.isOpen;
 
+  // Live stock for everything currently in the cart, checked right on
+  // this page so nothing can be paid for after it's sold out elsewhere.
+  const [stockIssues, setStockIssues] = useState<{ name: string; available: number }[]>([]);
+  const [stockChecked, setStockChecked] = useState(false);
+
+  useEffect(() => {
+    if (cart.length === 0) return;
+    setStockChecked(false);
+    getStockForProductIds(cart.map((item) => item.id))
+      .then((map) => {
+        const issues: { name: string; available: number }[] = [];
+        for (const item of cart) {
+          const stock = map.get(item.id);
+          if (stock !== undefined && stock !== null && item.quantity > stock) {
+            issues.push({ name: item.name, available: stock });
+          }
+        }
+        setStockIssues(issues);
+      })
+      .catch(() => {
+        // Non-critical — if this fails, we just won't block on stock.
+      })
+      .finally(() => setStockChecked(true));
+  }, [cart]);
+
+  const hasStockIssues = stockIssues.length > 0;
+
   const [form, setForm] = useState({
     name: "",
     address: "",
@@ -110,6 +138,7 @@ const isStoreClosed = storeStatus !== null && !storeStatus.isOpen;
   const isFormValid =
     !isDeliveryBlocked &&
     !isStoreClosed &&
+    !hasStockIssues &&
     (needsAddress
       ? form.name.trim() !== "" &&
         form.address.trim() !== "" &&
@@ -163,6 +192,17 @@ const isStoreClosed = storeStatus !== null && !storeStatus.isOpen;
         razorpayOrderId,
         razorpayPaymentId: paymentId,
       });
+
+      // Reduce stock for every tracked item now that the order is
+      // confirmed — keeps admin and the site in sync automatically.
+      for (const item of cart) {
+        try {
+          await decrementStock(item.id, item.quantity);
+        } catch {
+          // Non-critical for the order itself — inventory can be
+          // corrected manually if this fails.
+        }
+      }
 
       setPlacedBillNo(result.billNo);
       setOrderPlaced(true);
@@ -281,6 +321,21 @@ const isStoreClosed = storeStatus !== null && !storeStatus.isOpen;
           <div className="bg-red-50 border border-red-200 text-red-600 text-sm font-semibold px-5 py-4 rounded-2xl mb-6">
             This store isn't taking orders right now. We're open daily from 2:00 PM – 11:59 PM —
             please check back then.
+          </div>
+        )}
+        {hasStockIssues && (
+          <div className="bg-red-50 border border-red-200 text-red-600 text-sm font-semibold px-5 py-4 rounded-2xl mb-6">
+            <p className="mb-1">Some items in your cart have limited stock:</p>
+            <ul className="list-disc list-inside font-normal">
+              {stockIssues.map((issue) => (
+                <li key={issue.name}>
+                  {issue.name} — only {issue.available} available
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 font-normal">
+              Please go back to your cart and reduce the quantity before continuing.
+            </p>
           </div>
         )}
 
@@ -460,7 +515,7 @@ const isStoreClosed = storeStatus !== null && !storeStatus.isOpen;
                   Delivery isn't available beyond 4 km. Please switch to Pickup or Dine In above.
                 </p>
               ) : (
-                !isFormValid && (
+                !isFormValid && stockChecked && !hasStockIssues && (
                   <p className="text-amber-600 text-xs mt-3">
                     Please fill in your {needsAddress ? "delivery" : "contact"} details above to proceed to payment.
                   </p>

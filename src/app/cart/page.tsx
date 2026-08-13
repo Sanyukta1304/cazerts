@@ -1,16 +1,66 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Trash2, Plus, Minus, ShoppingBag } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
+import { getStockForProductIds } from "@/lib/products";
 
 export default function CartPage() {
   const { cart, removeFromCart, updateQuantity, cartTotal } = useCart();
   const { isLoggedIn } = useAuth();
   const router = useRouter();
+
+  // productId -> live stock. null = untracked/unlimited. Not present yet
+  // = still loading.
+  const [stockMap, setStockMap] = useState<Map<string, number | null>>(new Map());
+  const [stockNotice, setStockNotice] = useState("");
+
+  useEffect(() => {
+    if (cart.length === 0) return;
+    getStockForProductIds(cart.map((item) => item.id))
+      .then((map) => {
+        setStockMap(map);
+
+        // If anything in the cart already exceeds what's actually in
+        // stock (e.g. it dropped since it was added), clamp it down and
+        // let the person know.
+        const overLimitNames: string[] = [];
+        for (const item of cart) {
+          const stock = map.get(item.id);
+          if (stock !== undefined && stock !== null && item.quantity > stock) {
+            overLimitNames.push(item.name);
+            updateQuantity(item.id, Math.max(0, stock));
+          }
+        }
+        if (overLimitNames.length > 0) {
+          setStockNotice(
+            `Reduced quantity for ${overLimitNames.join(", ")} — only limited stock left.`
+          );
+        }
+      })
+      .catch(() => {
+        // Non-critical — if this fails, we just won't show stock limits.
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart.length]);
+
+  function stockFor(productId: string): number | null {
+    return stockMap.has(productId) ? stockMap.get(productId)! : null;
+  }
+
+  function handleIncrease(itemId: string, currentQty: number, name: string) {
+    const stock = stockFor(itemId);
+    if (stock !== null && currentQty >= stock) {
+      setStockNotice(`Only ${stock} left of ${name}.`);
+      return;
+    }
+    setStockNotice("");
+    updateQuantity(itemId, currentQty + 1);
+  }
 
   const handleCheckoutClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -48,68 +98,91 @@ export default function CartPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="text-3xl md:text-4xl font-extrabold text-black mb-10"
+          className="text-3xl md:text-4xl font-extrabold text-black mb-6"
         >
           Your Cart
         </motion.h1>
 
+        {stockNotice && (
+          <div className="bg-amber-50 text-amber-700 text-sm px-4 py-3 rounded-xl mb-6 flex items-center justify-between gap-4">
+            <span>{stockNotice}</span>
+            <button
+              onClick={() => setStockNotice("")}
+              className="text-amber-700/60 hover:text-amber-700 text-xs font-bold shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
           {/* Cart items */}
           <div className="lg:col-span-2 space-y-4">
-            {cart.map((item) => (
-              <motion.div
-                key={item.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="bg-white rounded-2xl p-4 md:p-5 shadow-card flex flex-col md:flex-row md:items-center gap-4"
-              >
-                <div className="flex items-center gap-4 flex-1 min-w-0">
-                  <div
-                    className="w-16 h-16 md:w-24 md:h-24 rounded-xl bg-cover bg-center shrink-0"
-                    style={{ backgroundImage: `url('${item.image_url}')` }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-black text-sm md:text-base">
-                      {item.name}
-                    </h3>
-                    <p className="text-black/50 text-xs md:text-sm">
-                      {item.category_name}
-                    </p>
-                    <p className="text-magenta font-bold mt-1">₹{item.price}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between md:justify-end gap-3 shrink-0">
-                  <div className="inline-flex items-center bg-cream rounded-full shrink-0">
-                    <button
-                      onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                      className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-magenta/10 transition-colors shrink-0"
-                      aria-label="Decrease quantity"
-                    >
-                      <Minus size={14} />
-                    </button>
-                    <span className="w-6 text-center font-semibold text-sm shrink-0">
-                      {item.quantity}
-                    </span>
-                    <button
-                      onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                      className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-magenta/10 transition-colors shrink-0"
-                      aria-label="Increase quantity"
-                    >
-                      <Plus size={14} />
-                    </button>
+            {cart.map((item) => {
+              const stock = stockFor(item.id);
+              const atMax = stock !== null && item.quantity >= stock;
+              const isLowStock = stock !== null && stock > 0 && stock <= 5;
+              return (
+                <motion.div
+                  key={item.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="bg-white rounded-2xl p-4 md:p-5 shadow-card flex flex-col md:flex-row md:items-center gap-4"
+                >
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <div
+                      className="w-16 h-16 md:w-24 md:h-24 rounded-xl bg-cover bg-center shrink-0"
+                      style={{ backgroundImage: `url('${item.image_url}')` }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-black text-sm md:text-base">
+                        {item.name}
+                      </h3>
+                      <p className="text-black/50 text-xs md:text-sm">
+                        {item.category_name}
+                      </p>
+                      <p className="text-magenta font-bold mt-1">₹{item.price}</p>
+                      {isLowStock && (
+                        <p className="text-amber-600 text-xs font-semibold mt-1">
+                          Only {stock} left
+                        </p>
+                      )}
+                    </div>
                   </div>
 
-                  <button
-                    onClick={() => removeFromCart(item.id)}
-                    aria-label="Remove item"
-                    className="text-black/40 hover:text-red-500 transition-colors p-2"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              </motion.div>
-            ))}
+                  <div className="flex items-center justify-between md:justify-end gap-3 shrink-0">
+                    <div className="inline-flex items-center bg-cream rounded-full shrink-0">
+                      <button
+                        onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                        className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-magenta/10 transition-colors shrink-0"
+                        aria-label="Decrease quantity"
+                      >
+                        <Minus size={14} />
+                      </button>
+                      <span className="w-6 text-center font-semibold text-sm shrink-0">
+                        {item.quantity}
+                      </span>
+                      <button
+                        onClick={() => handleIncrease(item.id, item.quantity, item.name)}
+                        disabled={atMax}
+                        className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-magenta/10 transition-colors shrink-0 disabled:opacity-30 disabled:hover:bg-transparent"
+                        aria-label="Increase quantity"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={() => removeFromCart(item.id)}
+                      aria-label="Remove item"
+                      className="text-black/40 hover:text-red-500 transition-colors p-2"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
 
           {/* Order summary */}

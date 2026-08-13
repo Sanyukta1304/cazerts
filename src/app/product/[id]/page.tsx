@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence, PanInfo } from "framer-motion";
 import { ShoppingCart, Plus, Minus, ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
-import { getProducts, getProductImages, Product, ProductImage } from "@/lib/products";
+import { getProducts, getProductImages, getProductStock, Product, ProductImage } from "@/lib/products";
 import { useCart } from "@/context/CartContext";
 import Link from "next/link";
 
@@ -20,6 +20,11 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
+  // Live stock count, refreshed independently of the product list so it's
+  // as up to date as possible. null = untracked/unlimited.
+  const [liveStock, setLiveStock] = useState<number | null>(null);
+  const [stockNotice, setStockNotice] = useState("");
+  const [checkingStock, setCheckingStock] = useState(false);
 
   useEffect(() => {
     getProducts()
@@ -28,6 +33,8 @@ export default function ProductDetailPage() {
         setProduct(found || null);
 
         if (found) {
+          setLiveStock(found.stock_quantity);
+
           const relatedItems = allProducts
             .filter((p) => p.category_name === found.category_name && p.id !== found.id)
             .slice(0, 3);
@@ -35,17 +42,63 @@ export default function ProductDetailPage() {
 
           const galleryImages = await getProductImages(found.id);
           setGallery(galleryImages);
+
+          // Refresh stock independently in case it's changed very
+          // recently (e.g. someone just bought the last one).
+          const freshStock = await getProductStock(found.id);
+          setLiveStock(freshStock);
         }
       })
       .catch((err) => console.error("Failed to load product:", err))
       .finally(() => setLoading(false));
   }, [params.id]);
 
-  const handleAddToCart = () => {
-    if (!product || !product.in_stock) return;
-    addToCart(product, quantity);
-    setAdded(true);
-    setTimeout(() => setAdded(false), 2000);
+  const isOutOfStock = liveStock !== null && liveStock <= 0;
+  const isLowStock = liveStock !== null && liveStock > 0 && liveStock <= 5;
+
+  function increaseQuantity() {
+    setQuantity((q) => {
+      if (liveStock !== null && q >= liveStock) {
+        setStockNotice(`Only ${liveStock} left in stock.`);
+        return q;
+      }
+      setStockNotice("");
+      return q + 1;
+    });
+  }
+
+  function decreaseQuantity() {
+    setStockNotice("");
+    setQuantity((q) => Math.max(1, q - 1));
+  }
+
+  const handleAddToCart = async () => {
+    if (!product || isOutOfStock) return;
+
+    setCheckingStock(true);
+    setStockNotice("");
+    try {
+      // Re-check right before adding, in case stock changed since the
+      // page loaded.
+      const freshStock = await getProductStock(product.id);
+      setLiveStock(freshStock);
+
+      if (freshStock !== null && freshStock <= 0) {
+        setStockNotice("Sorry, this just sold out.");
+        return;
+      }
+      if (freshStock !== null && quantity > freshStock) {
+        setStockNotice(`Only ${freshStock} left in stock — please lower the quantity.`);
+        setQuantity(freshStock);
+        return;
+      }
+
+      addToCart(product, quantity);
+      setAdded(true);
+      setTimeout(() => setAdded(false), 2000);
+    } finally {
+      setCheckingStock(false);
+    }
   };
 
   if (loading) {
@@ -122,15 +175,20 @@ export default function ProductDetailPage() {
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.25 }}
                   className={`absolute inset-0 bg-cover bg-center ${
-                    !product.in_stock ? "grayscale opacity-60" : ""
+                    isOutOfStock ? "grayscale opacity-60" : ""
                   } ${hasMultipleSlides ? "cursor-grab active:cursor-grabbing" : ""}`}
                   style={{ backgroundImage: `url('${slides[activeIndex].imageUrl}')` }}
                 />
               </AnimatePresence>
 
-              {!product.in_stock && (
+              {isOutOfStock && (
                 <span className="absolute top-4 left-4 bg-magenta text-white text-xs font-bold px-3 py-1.5 rounded-full z-10">
                   Out of Stock
+                </span>
+              )}
+              {!isOutOfStock && isLowStock && (
+                <span className="absolute top-4 left-4 bg-amber-500 text-white text-xs font-bold px-3 py-1.5 rounded-full z-10">
+                  Only {liveStock} left
                 </span>
               )}
 
@@ -192,18 +250,23 @@ export default function ProductDetailPage() {
               ₹{product.price}
             </p>
 
-            {!product.in_stock && (
+            {isOutOfStock && (
               <p className="text-magenta font-bold text-sm mb-6">
                 Currently out of stock — check back soon!
               </p>
             )}
+            {!isOutOfStock && isLowStock && (
+              <p className="text-amber-600 font-bold text-sm mb-6">
+                Only {liveStock} left in stock — order soon!
+              </p>
+            )}
 
             {/* Quantity selector */}
-            <div className="mb-8">
+            <div className="mb-4">
               <p className="text-sm font-semibold text-black mb-3">Quantity</p>
               <div className="flex items-center gap-3 bg-white rounded-full px-2 py-2 w-fit shadow-card">
                 <button
-                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                  onClick={decreaseQuantity}
                   className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-magenta/10 transition-colors"
                   aria-label="Decrease quantity"
                 >
@@ -211,8 +274,9 @@ export default function ProductDetailPage() {
                 </button>
                 <span className="w-8 text-center font-bold">{quantity}</span>
                 <button
-                  onClick={() => setQuantity((q) => q + 1)}
-                  className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-magenta/10 transition-colors"
+                  onClick={increaseQuantity}
+                  disabled={liveStock !== null && quantity >= liveStock}
+                  className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-magenta/10 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
                   aria-label="Increase quantity"
                 >
                   <Plus size={16} />
@@ -220,14 +284,20 @@ export default function ProductDetailPage() {
               </div>
             </div>
 
+            {stockNotice && (
+              <p className="text-amber-600 text-sm font-semibold mb-6">{stockNotice}</p>
+            )}
+
             <button
               onClick={handleAddToCart}
-              disabled={!product.in_stock}
+              disabled={isOutOfStock || checkingStock}
               className="flex items-center justify-center gap-2 bg-magenta text-white font-semibold px-8 py-4 rounded-full hover:bg-magenta-dark transition-colors w-full sm:w-auto disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <ShoppingCart size={18} />
-              {!product.in_stock
+              {isOutOfStock
                 ? "Out of Stock"
+                : checkingStock
+                ? "Checking stock..."
                 : added
                 ? "Added to Cart!"
                 : `Add to Cart — ₹${product.price * quantity}`}
