@@ -10,14 +10,6 @@ import { useWishlist } from "@/context/WishlistContext";
 import Link from "next/link";
 import { useRouter } from "next/navigation";  
 
-
-const allCategoryNames = [
-  "Sundaes",
-  "Cake Cans",
-  "Cheesecakes",
-  "Milkshakes",
-];
-
 function MenuContent() {
   const searchParams = useSearchParams();
   const categoryFromUrl = searchParams.get("category");
@@ -124,17 +116,17 @@ function MenuContent() {
           >
             All
           </button>
-          {allCategoryNames.map((cat) => (
+          {categories.map((cat) => (
             <button
-              key={cat}
-              onClick={() => setActiveCategory(cat)}
+              key={cat.id}
+              onClick={() => setActiveCategory(cat.name)}
               className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-colors ${
-                activeCategory === cat
+                activeCategory === cat.name
                   ? "bg-magenta text-white"
                   : "bg-white text-black/70 hover:bg-magenta/10"
               }`}
             >
-              {cat}
+              {cat.name}
             </button>
           ))}
         </div>
