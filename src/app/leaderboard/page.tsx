@@ -74,7 +74,7 @@ export default function LeaderboardPage() {
             All Stores · All Time
           </p>
           <h1 className="font-extrabold text-4xl md:text-6xl tracking-tight bg-gradient-to-r from-magenta via-pink-400 to-gold bg-clip-text text-transparent uppercase italic">
-            Crown Leaderboard
+            Cazerts paglu
           </h1>
           <p className="text-black/50 text-sm mt-3">Top 5 crown earners across CAZERTS</p>
         </div>
