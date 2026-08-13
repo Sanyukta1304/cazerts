@@ -16,7 +16,7 @@ const AVATAR_BG = ["#f5c451", "#7dd3c0", "#f4978e", "#a3c9f9", "#c8b6ff"];
 
 // Crown/count pill — solid, high-contrast (was bg-yellow-400/10 + text-yellow-300, nearly invisible on cream)
 const CROWN_PILL =
-  "flex-shrink-0 flex items-center gap-2 bg-gradient-to-r from-amber-400 to-yellow-500 border border-amber-500 px-4 py-2 rounded-full shadow-sm";
+  "flex-shrink-0 flex items-center gap-2 bg-gradient-to-r from-magenta to-pink-500 border border-magenta px-4 py-2 rounded-full shadow-sm";
 
 export default function LeaderboardPage() {
   const { user, isLoggedIn } = useAuth();
@@ -74,7 +74,7 @@ export default function LeaderboardPage() {
             All Stores · All Time
           </p>
           <h1 className="font-extrabold text-4xl md:text-6xl tracking-tight bg-gradient-to-r from-magenta via-pink-400 to-gold bg-clip-text text-transparent uppercase italic">
-            Cazerts paglu
+            Crown Leaderboard
           </h1>
           <p className="text-black/50 text-sm mt-3">Top 5 crown earners across CAZERTS</p>
         </div>
@@ -137,8 +137,8 @@ export default function LeaderboardPage() {
                   </div>
 
                   <div className={CROWN_PILL}>
-                    <Crown size={18} className="text-black" />
-                    <span className="font-extrabold text-lg text-black">{entry.crowns}</span>
+                    <Crown size={18} className="text-white" />
+                    <span className="font-extrabold text-lg text-white">{entry.crowns}</span>
                   </div>
                 </motion.div>
               );
@@ -166,8 +166,8 @@ export default function LeaderboardPage() {
               </p>
             </div>
             <div className={CROWN_PILL}>
-              <Crown size={18} className="text-black" />
-              <span className="font-extrabold text-lg text-black">{myRank.crowns}</span>
+              <Crown size={18} className="text-white" />
+              <span className="font-extrabold text-lg text-white">{myRank.crowns}</span>
             </div>
           </motion.div>
         )}
