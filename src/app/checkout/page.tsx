@@ -3,18 +3,20 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { CreditCard, Smartphone, Tag, CheckCircle2, AlertCircle, MapPin } from "lucide-react";
+import { CreditCard, Smartphone, Tag, CheckCircle2, AlertCircle, MapPin, X } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import RazorpayButton from "@/components/checkout/RazorpayButton";
 import { submitOrder } from "@/lib/orders";
-import { getStoreStatus, StoreStatus } from "@/lib/store-status";
+import { getAllStoreClosures, StoreClosure } from "@/lib/store-closure";
+import { HOURS_LABEL, resolveStoreState } from "@/lib/store-hours";
 import { getStockForProductIds, decrementStock } from "@/lib/products";
-
-const COUPONS: Record<string, number> = {
-  SWEET10: 10,
-  CAZERTS20: 20,
-};
+import {
+  promoDiscount,
+  recordRedemption,
+  validatePromo,
+  ValidPromo,
+} from "@/lib/promoCodes";
 
 type OrderMode = "delivery" | "pickup" | "dinein";
 
@@ -57,20 +59,31 @@ export default function CheckoutPage() {
   const [distance, setDistance] = useState<"within4" | "beyond4">("within4");
   const [locationId, setLocationId] = useState(STORE_LOCATIONS[0].id);
 
-  const [storeStatus, setStoreStatus] = useState<StoreStatus | null>(null);
-useEffect(() => {
-  let cancelled = false;
-  getStoreStatus(locationId)
-    .then((s) => { if (!cancelled) setStoreStatus(s); })
-    .catch(() => { if (!cancelled) setStoreStatus(null); });
-  const interval = setInterval(() => {
-    getStoreStatus(locationId)
-      .then((s) => { if (!cancelled) setStoreStatus(s); })
-      .catch(() => {});
-  }, 60_000);
-  return () => { cancelled = true; clearInterval(interval); };
-}, [locationId]);
-const isStoreClosed = storeStatus !== null && !storeStatus.isOpen;
+  // Is the chosen store open right now? This follows the opening hours,
+  // plus anything the admin did (closed with a reason, or opened early).
+  const [closures, setClosures] = useState<StoreClosure[]>([]);
+  const [now, setNow] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    let cancelled = false;
+
+    function refresh() {
+      setNow(new Date());
+      getAllStoreClosures()
+        .then((c) => { if (!cancelled) setClosures(c); })
+        .catch(() => {});
+    }
+
+    refresh();
+    const interval = setInterval(refresh, 30_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  const storeState = resolveStoreState(
+    closures.find((c) => c.locationId === locationId),
+    now
+  );
+  const isStoreClosed = storeState.state === "closed";
 
   // Live stock for everything currently in the cart, checked right on
   // this page so nothing can be paid for after it's sold out elsewhere.
@@ -115,8 +128,9 @@ const isStoreClosed = storeStatus !== null && !storeStatus.isOpen;
 
   const [paymentMethod, setPaymentMethod] = useState<"upi" | "card">("upi");
   const [couponCode, setCouponCode] = useState("");
-  const [appliedDiscount, setAppliedDiscount] = useState(0);
+  const [appliedPromo, setAppliedPromo] = useState<ValidPromo | null>(null);
   const [couponMessage, setCouponMessage] = useState("");
+  const [applyingCoupon, setApplyingCoupon] = useState(false);
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [placedBillNo, setPlacedBillNo] = useState("");
   const [paymentError, setPaymentError] = useState("");
@@ -130,10 +144,8 @@ const isStoreClosed = storeStatus !== null && !storeStatus.isOpen;
         : 30
       : 0;
 
-  const discountAmount = (cartTotal * appliedDiscount) / 100;
+  const discountAmount = appliedPromo ? promoDiscount(appliedPromo, cartTotal) : 0;
   const finalTotal = Math.max(cartTotal + deliveryFee - discountAmount, 0);
-
-  const isSunday = new Date().getDay() === 0;
 
   const isFormValid =
     !isDeliveryBlocked &&
@@ -150,21 +162,28 @@ const isStoreClosed = storeStatus !== null && !storeStatus.isOpen;
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const applyCoupon = () => {
-    if (!isSunday) {
-      setAppliedDiscount(0);
-      setCouponMessage("🎉 Coupons are only valid on Sundays! Come back then for a sweet discount.");
-      return;
-    }
+  const applyCoupon = async () => {
+    if (applyingCoupon) return;
+    setApplyingCoupon(true);
+    setCouponMessage("");
 
-    const code = couponCode.trim().toUpperCase();
-    if (COUPONS[code]) {
-      setAppliedDiscount(COUPONS[code]);
-      setCouponMessage(`✓ Coupon applied! ${COUPONS[code]}% off`);
+    const result = await validatePromo(couponCode, user?.phone || "", cartTotal);
+
+    if (result.ok) {
+      setAppliedPromo(result.promo);
+      const off = promoDiscount(result.promo, cartTotal);
+      setCouponMessage(`✓ ${result.promo.code} applied! You save ₹${off}`);
     } else {
-      setAppliedDiscount(0);
-      setCouponMessage("Invalid coupon code");
+      setAppliedPromo(null);
+      setCouponMessage(result.message);
     }
+    setApplyingCoupon(false);
+  };
+
+  const removeCoupon = () => {
+    setAppliedPromo(null);
+    setCouponCode("");
+    setCouponMessage("");
   };
 
   const handlePaymentSuccess = async (paymentId: string, razorpayOrderId: string) => {
@@ -192,6 +211,11 @@ const isStoreClosed = storeStatus !== null && !storeStatus.isOpen;
         razorpayOrderId,
         razorpayPaymentId: paymentId,
       });
+
+      // Remember that this customer used the code (for once-per-customer codes).
+      if (appliedPromo) {
+        await recordRedemption(appliedPromo.id, user.phone, result.billNo);
+      }
 
       // Reduce stock for every tracked item now that the order is
       // confirmed — keeps admin and the site in sync automatically.
@@ -319,8 +343,17 @@ const isStoreClosed = storeStatus !== null && !storeStatus.isOpen;
         </div>
         {isStoreClosed && (
           <div className="bg-red-50 border border-red-200 text-red-600 text-sm font-semibold px-5 py-4 rounded-2xl mb-6">
-            This store isn't taking orders right now. We're open daily from 2:00 PM – 11:59 PM —
-            please check back then.
+            {storeState.state === "closed" && storeState.source === "admin" ? (
+              <>
+                This store is closed right now.
+                {storeState.reason && <> Reason: {storeState.reason}.</>}
+              </>
+            ) : (
+              <>
+                This store isn't taking orders right now. We're open daily from {HOURS_LABEL} —
+                please check back then.
+              </>
+            )}
           </div>
         )}
         {hasStockIssues && (
@@ -559,28 +592,39 @@ const isStoreClosed = storeStatus !== null && !storeStatus.isOpen;
                 <input
                   type="text"
                   value={couponCode}
-                  onChange={(e) => setCouponCode(e.target.value)}
+                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !appliedPromo) applyCoupon();
+                  }}
+                  disabled={!!appliedPromo}
                   placeholder="Coupon code"
-                  className="w-full py-2.5 text-sm focus:outline-none"
+                  className="w-full py-2.5 text-sm uppercase focus:outline-none disabled:bg-transparent disabled:text-black/60"
                 />
               </div>
-              <button
-                type="button"
-                onClick={applyCoupon}
-                className="bg-black text-white text-sm font-semibold px-4 rounded-xl hover:bg-black/80 transition-colors"
-              >
-                Apply
-              </button>
+              {appliedPromo ? (
+                <button
+                  type="button"
+                  onClick={removeCoupon}
+                  aria-label="Remove coupon"
+                  className="bg-black/5 text-black/60 px-4 rounded-xl hover:bg-black/10 transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={applyCoupon}
+                  disabled={applyingCoupon || !couponCode.trim()}
+                  className="bg-black text-white text-sm font-semibold px-4 rounded-xl hover:bg-black/80 transition-colors disabled:opacity-40"
+                >
+                  {applyingCoupon ? "..." : "Apply"}
+                </button>
+              )}
             </div>
-            {isSunday && (
-              <p className="text-magenta text-xs mb-3">
-                🎉 It's Sunday — coupons are live today!
-              </p>
-            )}
             {couponMessage && (
               <p
                 className={`text-xs mb-4 ${
-                  appliedDiscount > 0 ? "text-green-600" : "text-red-500"
+                  appliedPromo ? "text-green-600" : "text-red-500"
                 }`}
               >
                 {couponMessage}
@@ -598,10 +642,16 @@ const isStoreClosed = storeStatus !== null && !storeStatus.isOpen;
                   <span>{deliveryFee === 0 ? "Free" : `₹${deliveryFee}`}</span>
                 </div>
               )}
-              {appliedDiscount > 0 && (
+              {appliedPromo && discountAmount > 0 && (
                 <div className="flex justify-between text-green-600">
-                  <span>Discount ({appliedDiscount}%)</span>
-                  <span>-₹{discountAmount.toFixed(0)}</span>
+                  <span>
+                    Discount ({appliedPromo.code}
+                    {appliedPromo.discountType === "percent"
+                      ? ` · ${appliedPromo.discountValue}%`
+                      : ""}
+                    )
+                  </span>
+                  <span>-₹{discountAmount}</span>
                 </div>
               )}
               <div className="flex justify-between font-bold text-black text-base border-t border-black/10 pt-3">

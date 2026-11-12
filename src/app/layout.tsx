@@ -4,11 +4,11 @@ import "./globals.css";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import MobileCartBar from "@/components/MobileCartBar";
+import StoreClosedOverlay from "@/components/StoreClosedOverlay";
 import { CartProvider } from "@/context/CartContext";
 import { WishlistProvider } from "@/context/WishlistContext";
 import { ReviewsProvider } from "@/context/ReviewsContext";
 import { AuthProvider } from "@/context/AuthContext";
-
 
 const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -19,7 +19,7 @@ const plusJakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: "CAZERTS | Every Bite, A Celebration",
   description:
-    "CAZERTS is a premium dessert brand specializing in handcrafted sundaes, signature cake cans, brownies, cheesecakes, waffles, milkshakes, coffee, and indulgent chocolate desserts.",
+    "CAZERTS is a premium dessert brand specializing in handcrafted sundaes, signature cake cans, cheesecakes, milkshakes and indulgent chocolate desserts.",
   keywords: [
     "CAZERTS",
     "premium desserts",
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "CAZERTS | Every Bite, A Celebration",
     description:
-      "Premium handcrafted sundaes, cake cans, waffles, cheesecakes, brownies and signature chocolate desserts.",
+      "Premium handcrafted sundaes, cake cans, cheesecakes, milkshakes and signature chocolate desserts.",
     type: "website",
   },
 };
@@ -53,6 +53,7 @@ export default function RootLayout({
                 <main>{children}</main>
                 <Footer />
                 <MobileCartBar />
+                <StoreClosedOverlay />
               </ReviewsProvider>
             </WishlistProvider>
           </CartProvider>

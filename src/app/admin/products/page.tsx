@@ -5,8 +5,7 @@ import { Plus, Pencil, Trash2, X } from "lucide-react";
 import { products as initialProducts, Product } from "@/data/products";
 
 const categoryOptions = [
-  "Sundaes", "Cake Cans", "Brownies", "Cheesecakes",
-  "Waffles", "Milkshakes", "Coffee", "Cold Beverages",
+  "Sundaes", "Cake Cans", "Brownies", "Cheesecakes"
 ];
 
 export default function AdminProductsPage() {

@@ -11,11 +11,11 @@ export type Product = {
 export const categories = [
   { name: "Sundaes", slug: "sundaes", image: "/images/sundae.jpg" },
   { name: "Cake Cans", slug: "cake-cans", image: "/images/cake-can.jpg" },
-  { name: "Brownies", slug: "brownies", image: "/images/brownie.jpg" },
+  
   { name: "Cheesecakes", slug: "cheesecakes", image: "/images/cheesecake.jpg" },
-  { name: "Waffles", slug: "waffles", image: "/images/waffle.jpg" },
+  
   { name: "Milkshakes", slug: "milkshakes", image: "/images/milkshake.jpg" },
-  { name: "Coffee", slug: "coffee", image: "/images/coffee.jpg" },
+  
 ];
 
 export const products: Product[] = [

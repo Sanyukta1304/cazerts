@@ -56,8 +56,8 @@ export default function AboutPage() {
           >
             CAZERTS was born from a simple belief — dessert should be an
             experience, not an afterthought. We specialize in handcrafted
-            sundaes, signature cake cans, brownies, cheesecakes, waffles,
-            milkshakes, coffee, and indulgent chocolate desserts, each made
+            sundaes, signature cake cans, cheesecakes, 
+            milkshakes, and indulgent chocolate desserts, each made
             with premium ingredients and presented with care. Every bite is
             designed to turn an ordinary moment into a celebration.
           </motion.p>
