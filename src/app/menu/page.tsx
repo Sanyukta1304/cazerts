@@ -7,8 +7,9 @@ import { ShoppingCart, Heart, Plus, Minus, ArrowRight } from "lucide-react";
 import { getProducts, getCategories, Product } from "@/lib/products";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
+import { useStoreStatus } from "@/context/StoreStatusContext";
 import Link from "next/link";
-import { useRouter } from "next/navigation";  
+import { useRouter } from "next/navigation";
 
 function MenuContent() {
   const searchParams = useSearchParams();
@@ -16,6 +17,7 @@ function MenuContent() {
   const { cart, cartCount, cartTotal, addToCart, updateQuantity, removeFromCart } = useCart();
   const router = useRouter();
   const { toggleWishlist, isWishlisted } = useWishlist();
+  const { orderingDisabled } = useStoreStatus();
   const [toast, setToast] = useState<string | null>(null);
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -31,10 +33,6 @@ function MenuContent() {
       .catch((err) => console.error("Failed to load menu data:", err))
       .finally(() => setLoading(false));
   }, []);
-
-  const initialCategory = categoryFromUrl
-    ? categories.find((c) => c.slug === categoryFromUrl)?.name ?? "All"
-    : "All";
 
   const [activeCategory, setActiveCategory] = useState("All");
 
@@ -61,11 +59,13 @@ function MenuContent() {
   };
 
   const handleAddToCart = (item: Product) => {
+    if (orderingDisabled) return;
     addToCart(item);
     showToast(`${item.name} added to cart! 🛒`);
   };
 
   const handleIncrease = (item: Product) => {
+    if (orderingDisabled) return;
     updateQuantity(item.id, getQuantity(item.id) + 1);
   };
 
@@ -137,19 +137,22 @@ function MenuContent() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
             {filteredProducts.map((item, i) => {
               const quantity = getQuantity(item.id);
+              const dimmed = !item.in_stock || orderingDisabled;
               return (
                 <motion.div
                   key={item.id}
                   initial={{ opacity: 0, y: 30 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.4, delay: i * 0.05 }}
-                  className="group bg-white rounded-3xl overflow-hidden shadow-card hover:shadow-premium transition-all duration-300"
+                  className={`group bg-white rounded-3xl overflow-hidden shadow-card hover:shadow-premium transition-all duration-300 ${
+                    orderingDisabled ? "opacity-70" : ""
+                  }`}
                 >
                   <div className="relative aspect-[4/3] overflow-hidden">
                     <Link href={`/product/${item.id}`} className="block absolute inset-0">
                       <div
                         className={`absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-110 ${
-                          !item.in_stock ? "grayscale opacity-60" : ""
+                          dimmed ? "grayscale opacity-60" : ""
                         }`}
                         style={{ backgroundImage: `url('${item.image_url}')` }}
                       />
@@ -159,6 +162,7 @@ function MenuContent() {
                         Out of Stock
                       </span>
                     )}
+                    
                     <button
                       onClick={() => handleToggleWishlist(item)}
                       aria-label="Add to wishlist"
@@ -193,6 +197,14 @@ function MenuContent() {
                         <span className="text-magenta text-xs font-bold px-4 py-2.5">
                           Unavailable
                         </span>
+                      ) : orderingDisabled ? (
+                        <button
+                          type="button"
+                          disabled
+                          className="whitespace-nowrap bg-black/10 text-black/40 text-sm font-semibold px-4 py-2.5 rounded-full cursor-not-allowed"
+                        >
+                          Store closed
+                        </button>
                       ) : quantity === 0 ? (
                         <button
                           onClick={() => handleAddToCart(item)}
@@ -236,7 +248,7 @@ function MenuContent() {
       </div>
 
       <AnimatePresence>
-        {cartCount > 0 && (
+        {cartCount > 0 && !orderingDisabled && (
           <motion.button
             initial={{ y: 100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}

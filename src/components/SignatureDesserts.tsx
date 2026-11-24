@@ -6,12 +6,14 @@ import { ShoppingCart, Heart, Plus, Minus } from "lucide-react";
 import { getProducts, Product } from "@/lib/products";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
+import { useStoreStatus } from "@/context/StoreStatusContext";
 
 export default function SignatureDesserts() {
   const [signature, setSignature] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const { cart, addToCart, updateQuantity, removeFromCart } = useCart();
   const { toggleWishlist, isWishlisted } = useWishlist();
+  const { orderingDisabled } = useStoreStatus();
   const [toast, setToast] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
@@ -35,11 +37,13 @@ export default function SignatureDesserts() {
   };
 
   const handleAddToCart = (item: Product) => {
+    if (orderingDisabled) return;
     addToCart(item);
     showToast(`${item.name} added to cart! 🛒`);
   };
 
   const handleIncrease = (item: Product) => {
+    if (orderingDisabled) return;
     const qty = getQuantity(item.id);
     updateQuantity(item.id, qty + 1);
   };
@@ -100,16 +104,22 @@ export default function SignatureDesserts() {
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ duration: 0.5, delay: i * 0.1 }}
-                  className="group relative rounded-3xl overflow-hidden shadow-card hover:shadow-premium transition-all duration-300 bg-cream flex flex-col"
+                  className={`group relative rounded-3xl overflow-hidden shadow-card hover:shadow-premium transition-all duration-300 bg-cream flex flex-col ${
+                    orderingDisabled ? "opacity-70" : ""
+                  }`}
                 >
                   <div className="relative aspect-[4/3] overflow-hidden">
                     <div
-                      className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-110"
+                      className={`absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-110 ${
+                        orderingDisabled ? "grayscale opacity-60" : ""
+                      }`}
                       style={{ backgroundImage: `url('${item.image_url}')` }}
                     />
-                    <span className="absolute top-4 left-4 bg-gold text-black text-xs font-bold px-3 py-1.5 rounded-full">
-                      Signature
-                    </span>
+                    {!orderingDisabled && (
+                      <span className="absolute top-4 left-4 bg-gold text-black text-xs font-bold px-3 py-1.5 rounded-full">
+                        Signature
+                      </span>
+                    )}
                     <button
                       onClick={() => handleToggleWishlist(item)}
                       aria-label="Add to wishlist"
@@ -143,12 +153,20 @@ export default function SignatureDesserts() {
                     >
                       {isExpanded ? "Show less" : "Read more"}
                     </button>
-                    <div className="flex items-center justify-between mt-auto">
+                    <div className="flex items-center justify-between mt-auto gap-3">
                       <span className="text-magenta font-extrabold text-lg">
                         ₹{item.price}
                       </span>
 
-                      {quantity === 0 ? (
+                      {orderingDisabled ? (
+                        <button
+                          type="button"
+                          disabled
+                          className="whitespace-nowrap bg-black/10 text-black/40 text-sm font-semibold px-4 py-2.5 rounded-full cursor-not-allowed"
+                        >
+                          Store closed
+                        </button>
+                      ) : quantity === 0 ? (
                         <button
                           onClick={() => handleAddToCart(item)}
                           className="flex items-center gap-2 bg-magenta text-white text-sm font-semibold px-4 py-2.5 rounded-full hover:bg-magenta-dark transition-colors"

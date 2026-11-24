@@ -4,11 +4,11 @@ import "./globals.css";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import MobileCartBar from "@/components/MobileCartBar";
-import StoreClosedOverlay from "@/components/StoreClosedOverlay";
 import { CartProvider } from "@/context/CartContext";
 import { WishlistProvider } from "@/context/WishlistContext";
 import { ReviewsProvider } from "@/context/ReviewsContext";
 import { AuthProvider } from "@/context/AuthContext";
+import { StoreStatusProvider } from "@/context/StoreStatusContext";
 
 const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -49,11 +49,12 @@ export default function RootLayout({
           <CartProvider>
             <WishlistProvider>
               <ReviewsProvider>
-                <Navbar />
-                <main>{children}</main>
-                <Footer />
-                <MobileCartBar />
-                <StoreClosedOverlay />
+                <StoreStatusProvider>
+                  <Navbar />
+                  <main>{children}</main>
+                  <Footer />
+                  <MobileCartBar />
+                </StoreStatusProvider>
               </ReviewsProvider>
             </WishlistProvider>
           </CartProvider>

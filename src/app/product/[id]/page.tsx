@@ -6,12 +6,14 @@ import { motion, AnimatePresence, PanInfo } from "framer-motion";
 import { ShoppingCart, Plus, Minus, ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { getProducts, getProductImages, getProductStock, Product, ProductImage } from "@/lib/products";
 import { useCart } from "@/context/CartContext";
+import { useStoreStatus } from "@/context/StoreStatusContext";
 import Link from "next/link";
 
 export default function ProductDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { addToCart } = useCart();
+  const { orderingDisabled } = useStoreStatus();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [related, setRelated] = useState<Product[]>([]);
@@ -73,7 +75,7 @@ export default function ProductDetailPage() {
   }
 
   const handleAddToCart = async () => {
-    if (!product || isOutOfStock) return;
+    if (!product || isOutOfStock || orderingDisabled) return;
 
     setCheckingStock(true);
     setStockNotice("");
@@ -128,6 +130,7 @@ export default function ProductDetailPage() {
     ...gallery.map((g) => ({ id: g.id, imageUrl: g.imageUrl })),
   ];
   const hasMultipleSlides = slides.length > 1;
+  const imageDimmed = isOutOfStock || orderingDisabled;
 
   function goToSlide(index: number) {
     if (index < 0) index = slides.length - 1;
@@ -175,7 +178,7 @@ export default function ProductDetailPage() {
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.25 }}
                   className={`absolute inset-0 bg-cover bg-center ${
-                    isOutOfStock ? "grayscale opacity-60" : ""
+                    imageDimmed ? "grayscale opacity-60" : ""
                   } ${hasMultipleSlides ? "cursor-grab active:cursor-grabbing" : ""}`}
                   style={{ backgroundImage: `url('${slides[activeIndex].imageUrl}')` }}
                 />
@@ -186,7 +189,8 @@ export default function ProductDetailPage() {
                   Out of Stock
                 </span>
               )}
-              {!isOutOfStock && isLowStock && (
+             
+              {!isOutOfStock && !orderingDisabled && isLowStock && (
                 <span className="absolute top-4 left-4 bg-amber-500 text-white text-xs font-bold px-3 py-1.5 rounded-full z-10">
                   Only {liveStock} left
                 </span>
@@ -255,18 +259,24 @@ export default function ProductDetailPage() {
                 Currently out of stock — check back soon!
               </p>
             )}
-            {!isOutOfStock && isLowStock && (
+            {!isOutOfStock && orderingDisabled && (
+              <p className="text-red-500 font-bold text-sm mb-6">
+                We're closed right now — ordering is unavailable until we open.
+              </p>
+            )}
+            {!isOutOfStock && !orderingDisabled && isLowStock && (
               <p className="text-amber-600 font-bold text-sm mb-6">
                 Only {liveStock} left in stock — order soon!
               </p>
             )}
 
             {/* Quantity selector */}
-            <div className="mb-4">
+            <div className={`mb-4 ${orderingDisabled ? "opacity-40 pointer-events-none" : ""}`}>
               <p className="text-sm font-semibold text-black mb-3">Quantity</p>
               <div className="flex items-center gap-3 bg-white rounded-full px-2 py-2 w-fit shadow-card">
                 <button
                   onClick={decreaseQuantity}
+                  disabled={orderingDisabled}
                   className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-magenta/10 transition-colors"
                   aria-label="Decrease quantity"
                 >
@@ -275,7 +285,7 @@ export default function ProductDetailPage() {
                 <span className="w-8 text-center font-bold">{quantity}</span>
                 <button
                   onClick={increaseQuantity}
-                  disabled={liveStock !== null && quantity >= liveStock}
+                  disabled={orderingDisabled || (liveStock !== null && quantity >= liveStock)}
                   className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-magenta/10 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
                   aria-label="Increase quantity"
                 >
@@ -290,12 +300,14 @@ export default function ProductDetailPage() {
 
             <button
               onClick={handleAddToCart}
-              disabled={isOutOfStock || checkingStock}
+              disabled={isOutOfStock || checkingStock || orderingDisabled}
               className="flex items-center justify-center gap-2 bg-magenta text-white font-semibold px-8 py-4 rounded-full hover:bg-magenta-dark transition-colors w-full sm:w-auto disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <ShoppingCart size={18} />
               {isOutOfStock
                 ? "Out of Stock"
+                : orderingDisabled
+                ? "Currently unavailable"
                 : checkingStock
                 ? "Checking stock..."
                 : added
@@ -321,7 +333,7 @@ export default function ProductDetailPage() {
                   <div className="relative aspect-[4/3] overflow-hidden">
                     <div
                       className={`absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-110 ${
-                        !item.in_stock ? "grayscale opacity-60" : ""
+                        !item.in_stock || orderingDisabled ? "grayscale opacity-60" : ""
                       }`}
                       style={{ backgroundImage: `url('${item.image_url}')` }}
                     />

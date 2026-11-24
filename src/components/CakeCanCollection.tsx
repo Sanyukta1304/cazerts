@@ -6,12 +6,14 @@ import { ShoppingCart, Heart, Plus, Minus } from "lucide-react";
 import { getProducts, Product } from "@/lib/products";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
+import { useStoreStatus } from "@/context/StoreStatusContext";
 
 export default function CakeCanCollection() {
   const [cakeCans, setCakeCans] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const { cart, addToCart, updateQuantity, removeFromCart } = useCart();
   const { toggleWishlist, isWishlisted } = useWishlist();
+  const { orderingDisabled } = useStoreStatus();
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -34,11 +36,13 @@ export default function CakeCanCollection() {
   };
 
   const handleAddToCart = (item: Product) => {
+    if (orderingDisabled) return;
     addToCart(item);
     showToast(`${item.name} added to cart! 🛒`);
   };
 
   const handleIncrease = (item: Product) => {
+    if (orderingDisabled) return;
     const qty = getQuantity(item.id);
     updateQuantity(item.id, qty + 1);
   };
@@ -91,6 +95,7 @@ export default function CakeCanCollection() {
             {cakeCans.map((item, i) => {
               const quantity = getQuantity(item.id);
               const tag = i % 3 === 0 ? "Bestseller" : i % 3 === 1 ? "New" : "Popular";
+              const dimmed = !item.in_stock || orderingDisabled;
 
               return (
                 <motion.div
@@ -99,22 +104,24 @@ export default function CakeCanCollection() {
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ duration: 0.5, delay: i * 0.07 }}
-                  className="group bg-white rounded-2xl overflow-hidden shadow-card hover:shadow-premium transition-all duration-300"
+                  className={`group bg-white rounded-2xl overflow-hidden shadow-card hover:shadow-premium transition-all duration-300 ${
+                    orderingDisabled ? "opacity-70" : ""
+                  }`}
                 >
                   <div className="relative aspect-square overflow-hidden">
                     <div
                       className={`absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-110 ${
-                        !item.in_stock ? "grayscale opacity-60" : ""
+                        dimmed ? "grayscale opacity-60" : ""
                       }`}
                       style={{ backgroundImage: `url('${item.image_url}')` }}
                     />
-                    {item.in_stock ? (
-                      <span className="absolute top-3 left-3 bg-gold text-black text-[10px] font-bold px-2.5 py-1 rounded-full">
-                        {tag}
-                      </span>
-                    ) : (
+                    {!item.in_stock ? (
                       <span className="absolute top-3 left-3 bg-magenta text-white text-[10px] font-bold px-2.5 py-1 rounded-full">
                         Out of Stock
+                      </span>
+                      ) : orderingDisabled ? null : (
+                      <span className="absolute top-3 left-3 bg-gold text-black text-[10px] font-bold px-2.5 py-1 rounded-full">
+                        {tag}
                       </span>
                     )}
                     <button
@@ -148,6 +155,15 @@ export default function CakeCanCollection() {
                         <span className="text-magenta text-[11px] font-bold">
                           Unavailable
                         </span>
+                      ) : orderingDisabled ? (
+                        <button
+                          type="button"
+                          disabled
+                          aria-label="Currently unavailable"
+                          className="bg-black/10 text-black/40 text-[11px] font-semibold px-3 py-2 rounded-full cursor-not-allowed"
+                        >
+                          Unavailable
+                        </button>
                       ) : quantity === 0 ? (
                         <button
                           onClick={() => handleAddToCart(item)}

@@ -7,11 +7,13 @@ import { motion } from "framer-motion";
 import { Trash2, Plus, Minus, ShoppingBag } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
+import { useStoreStatus } from "@/context/StoreStatusContext";
 import { getStockForProductIds } from "@/lib/products";
 
 export default function CartPage() {
   const { cart, removeFromCart, updateQuantity, cartTotal } = useCart();
   const { isLoggedIn } = useAuth();
+  const { orderingDisabled } = useStoreStatus();
   const router = useRouter();
 
   // productId -> live stock. null = untracked/unlimited. Not present yet
@@ -64,6 +66,7 @@ export default function CartPage() {
 
   const handleCheckoutClick = (e: React.MouseEvent) => {
     e.preventDefault();
+    if (orderingDisabled) return;
     if (isLoggedIn) {
       router.push("/checkout");
     } else {
@@ -102,6 +105,13 @@ export default function CartPage() {
         >
           Your Cart
         </motion.h1>
+
+        {orderingDisabled && (
+          <div className="bg-red-50 border border-red-200 text-red-600 text-sm font-semibold px-4 py-3 rounded-xl mb-6">
+            We're closed right now, so checkout is unavailable. Your cart is
+            saved — come back when we open.
+          </div>
+        )}
 
         {stockNotice && (
           <div className="bg-amber-50 text-amber-700 text-sm px-4 py-3 rounded-xl mb-6 flex items-center justify-between gap-4">
@@ -212,9 +222,14 @@ export default function CartPage() {
 
             <button
               onClick={handleCheckoutClick}
-              className="mt-6 w-full text-center bg-magenta text-white font-semibold px-6 py-3.5 rounded-full hover:bg-magenta-dark transition-colors"
+              disabled={orderingDisabled}
+              className="mt-6 w-full text-center bg-magenta text-white font-semibold px-6 py-3.5 rounded-full hover:bg-magenta-dark transition-colors disabled:bg-black/10 disabled:text-black/40 disabled:cursor-not-allowed disabled:hover:bg-black/10"
             >
-              {isLoggedIn ? "Proceed to Checkout" : "Login to Proceed"}
+              {orderingDisabled
+                ? "Currently unavailable"
+                : isLoggedIn
+                ? "Proceed to Checkout"
+                : "Login to Proceed"}
             </button>
             <Link
               href="/menu"

@@ -5,10 +5,12 @@ import { motion } from "framer-motion";
 import { Heart, ShoppingCart, X } from "lucide-react";
 import { useWishlist } from "@/context/WishlistContext";
 import { useCart } from "@/context/CartContext";
+import { useStoreStatus } from "@/context/StoreStatusContext";
 
 export default function WishlistPage() {
   const { wishlist, toggleWishlist } = useWishlist();
   const { addToCart } = useCart();
+  const { orderingDisabled } = useStoreStatus();
 
   if (wishlist.length === 0) {
     return (
@@ -48,7 +50,9 @@ export default function WishlistPage() {
               key={item.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="relative bg-white rounded-3xl overflow-hidden shadow-card"
+              className={`relative bg-white rounded-3xl overflow-hidden shadow-card ${
+                orderingDisabled ? "opacity-70" : ""
+              }`}
             >
               <button
                 onClick={() => toggleWishlist(item)}
@@ -58,8 +62,11 @@ export default function WishlistPage() {
                 <X size={16} className="text-black/60" />
               </button>
               <div
-                className="aspect-[4/3] bg-cover bg-center"
-                style={{ backgroundImage: `url('${item.image_url}')` }}              />
+                className={`aspect-[4/3] bg-cover bg-center ${
+                  orderingDisabled ? "grayscale opacity-60" : ""
+                }`}
+                style={{ backgroundImage: `url('${item.image_url}')` }}
+              />
               <div className="p-6">
                 <h3 className="text-lg font-bold text-black mb-2">
                   {item.name}
@@ -68,13 +75,23 @@ export default function WishlistPage() {
                   <span className="text-magenta font-extrabold text-lg">
                     ₹{item.price}
                   </span>
-                  <button
-                    onClick={() => addToCart(item)}
-                    className="flex items-center gap-2 bg-magenta text-white text-sm font-semibold px-4 py-2.5 rounded-full hover:bg-magenta-dark transition-colors"
-                  >
-                    <ShoppingCart size={16} />
-                    Add to Cart
-                  </button>
+                  {orderingDisabled ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="flex items-center gap-2 bg-black/10 text-black/40 text-sm font-semibold px-4 py-2.5 rounded-full cursor-not-allowed"
+                    >
+                      Currently unavailable
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => addToCart(item)}
+                      className="flex items-center gap-2 bg-magenta text-white text-sm font-semibold px-4 py-2.5 rounded-full hover:bg-magenta-dark transition-colors"
+                    >
+                      <ShoppingCart size={16} />
+                      Add to Cart
+                    </button>
+                  )}
                 </div>
               </div>
             </motion.div>
