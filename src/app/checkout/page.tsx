@@ -208,6 +208,7 @@ export default function CheckoutPage() {
         deliveryPincode: needsAddress ? form.pincode : undefined,
         items: cart,
         total: finalTotal,
+        discount: discountAmount,
         razorpayOrderId,
         razorpayPaymentId: paymentId,
       });

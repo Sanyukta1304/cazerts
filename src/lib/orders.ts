@@ -14,6 +14,7 @@ export type CheckoutInput = {
   deliveryPincode?: string;
   items: CartItem[];
   total: number;
+  discount?: number; // promo discount in rupees
   razorpayOrderId?: string;
   razorpayPaymentId?: string;
 };
@@ -108,6 +109,7 @@ export async function submitOrder(input: CheckoutInput): Promise<SubmitOrderResu
       customer_id: customerId,
       status: "pending",
       total: input.total,
+      discount: input.discount ?? 0,
       location_id: input.locationId,
       order_mode: input.orderMode,
       payment_method: input.paymentMethod,
