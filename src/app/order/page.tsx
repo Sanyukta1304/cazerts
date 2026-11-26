@@ -13,13 +13,13 @@ const perks = [
   },
   {
     icon: Truck,
-    title: "Doorstep Delivery",
-    description: "Delivered safely and on time, right to your door.",
+    title: "Delivery: Coming Soon",
+    description: "Home delivery is on its way. For now, enjoy our desserts at the store.",
   },
   {
     icon: ShieldCheck,
-    title: "Secure Payments",
-    description: "UPI and Card payments protected with Razorpay.",
+    title: "Pay at the Shop",
+    description: "Order online and pay at the counter. Online payment is coming soon.",
   },
 ];
 
@@ -47,12 +47,11 @@ export default function OrderPage() {
             Order Online
           </p>
           <h1 className="relative text-3xl md:text-5xl font-extrabold text-black mb-4">
-            Get Your Desserts Delivered
+            Order Your Desserts Online
           </h1>
           <p className="relative text-black/60 text-base md:text-lg">
-            Browse our full menu and get your favourite CAZERTS desserts
-            delivered fresh — close enough that the ice cream doesn't cry on
-            the way.
+            Browse our full menu, place your order, and pay at the shop when
+            you arrive. Delivery and pickup are coming soon.
           </p>
           <Link
             href="/menu"

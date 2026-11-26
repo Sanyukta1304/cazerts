@@ -3,10 +3,9 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { CreditCard, Smartphone, Tag, CheckCircle2, AlertCircle, MapPin, X } from "lucide-react";
+import { Tag, CheckCircle2, AlertCircle, MapPin, Store, X, Loader2 } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
-import RazorpayButton from "@/components/checkout/RazorpayButton";
 import { submitOrder } from "@/lib/orders";
 import { getAllStoreClosures, StoreClosure } from "@/lib/store-closure";
 import { HOURS_LABEL, resolveStoreState } from "@/lib/store-hours";
@@ -20,9 +19,10 @@ import {
 
 type OrderMode = "delivery" | "pickup" | "dinein";
 
-const modes: { key: OrderMode; label: string }[] = [
-  { key: "delivery", label: "Delivery" },
-  { key: "pickup", label: "Pickup" },
+// Delivery and Pickup are "coming soon" for now. Dine In is the only active mode.
+const modes: { key: OrderMode; label: string; comingSoon?: boolean }[] = [
+  { key: "delivery", label: "Delivery", comingSoon: true },
+  { key: "pickup", label: "Pickup", comingSoon: true },
   { key: "dinein", label: "Dine In" },
 ];
 
@@ -43,25 +43,24 @@ export default function CheckoutPage() {
     }
   }, [isLoggedIn, router]);
 
-  const [mode, setMode] = useState<OrderMode>("delivery");
+  // Dine In is the only mode for now.
+  const [mode, setMode] = useState<OrderMode>("dinein");
 
   useEffect(() => {
-    const stored = localStorage.getItem("cazerts-order-mode") as OrderMode | null;
-    if (stored) setMode(stored);
+    localStorage.setItem("cazerts-order-mode", "dinein");
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem("cazerts-order-mode", mode);
-  }, [mode]);
 
   const needsAddress = mode === "delivery";
 
   const [distance, setDistance] = useState<"within4" | "beyond4">("within4");
   const [locationId, setLocationId] = useState(STORE_LOCATIONS[0].id);
+  // Once the customer picks a store themselves, we never switch it for them.
+  const [storePicked, setStorePicked] = useState(false);
 
-  // Is the chosen store open right now? This follows the opening hours,
-  // plus anything the admin did (closed with a reason, or opened early).
+  // Each store's open/closed state is worked out on its own: opening BTM
+  // never opens Indiranagar or Koramangala, and closing one never closes another.
   const [closures, setClosures] = useState<StoreClosure[]>([]);
+  const [closuresLoaded, setClosuresLoaded] = useState(false);
   const [now, setNow] = useState<Date>(() => new Date());
 
   useEffect(() => {
@@ -70,8 +69,13 @@ export default function CheckoutPage() {
     function refresh() {
       setNow(new Date());
       getAllStoreClosures()
-        .then((c) => { if (!cancelled) setClosures(c); })
-        .catch(() => {});
+        .then((c) => {
+          if (!cancelled) setClosures(c);
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) setClosuresLoaded(true);
+        });
     }
 
     refresh();
@@ -79,14 +83,31 @@ export default function CheckoutPage() {
     return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
-  const storeState = resolveStoreState(
-    closures.find((c) => c.locationId === locationId),
-    now
-  );
+  function stateFor(id: string) {
+    return resolveStoreState(closures.find((c) => c.locationId === id), now);
+  }
+
+  const storeState = stateFor(locationId);
   const isStoreClosed = storeState.state === "closed";
+  const openStores = STORE_LOCATIONS.filter(
+    (loc) => loc.id !== locationId && stateFor(loc.id).state === "open"
+  );
+
+  // If the starting store (BTM) is closed but another store is open, begin
+  // on the first open store. Skipped once the customer has chosen a store.
+  useEffect(() => {
+    if (!closuresLoaded || storePicked) return;
+    if (resolveStoreState(closures.find((c) => c.locationId === locationId), now).state === "open") return;
+
+    const firstOpen = STORE_LOCATIONS.find(
+      (loc) =>
+        resolveStoreState(closures.find((c) => c.locationId === loc.id), now).state === "open"
+    );
+    if (firstOpen) setLocationId(firstOpen.id);
+  }, [closuresLoaded, closures, now, storePicked, locationId]);
 
   // Live stock for everything currently in the cart, checked right on
-  // this page so nothing can be paid for after it's sold out elsewhere.
+  // this page so nothing can be ordered after it's sold out elsewhere.
   const [stockIssues, setStockIssues] = useState<{ name: string; available: number }[]>([]);
   const [stockChecked, setStockChecked] = useState(false);
 
@@ -126,13 +147,13 @@ export default function CheckoutPage() {
     }
   }, [user?.name]);
 
-  const [paymentMethod, setPaymentMethod] = useState<"upi" | "card">("upi");
   const [couponCode, setCouponCode] = useState("");
   const [appliedPromo, setAppliedPromo] = useState<ValidPromo | null>(null);
   const [couponMessage, setCouponMessage] = useState("");
   const [applyingCoupon, setApplyingCoupon] = useState(false);
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [placedBillNo, setPlacedBillNo] = useState("");
+  const [placedTotal, setPlacedTotal] = useState(0);
   const [paymentError, setPaymentError] = useState("");
   const [savingOrder, setSavingOrder] = useState(false);
 
@@ -186,31 +207,51 @@ export default function CheckoutPage() {
     setCouponMessage("");
   };
 
-  const handlePaymentSuccess = async (paymentId: string, razorpayOrderId: string) => {
+  // Places the order with no online payment. The customer pays at the shop.
+  const handlePlaceOrder = async () => {
     if (!user?.phone) {
-      setPaymentError("You must be logged in to complete checkout.");
+      setPaymentError("You must be logged in to place an order.");
       return;
     }
+    if (savingOrder) return;
 
     setPaymentError("");
     setSavingOrder(true);
 
     try {
+      // Re-check the chosen store right now: it may have closed since the
+      // page loaded. If this check itself fails, we carry on.
+      try {
+        const fresh = await getAllStoreClosures();
+        setClosures(fresh);
+        setNow(new Date());
+        const freshState = resolveStoreState(
+          fresh.find((c) => c.locationId === locationId),
+          new Date()
+        );
+        if (freshState.state === "closed") {
+          setPaymentError(
+            "This store just closed, so we couldn't place your order. Please choose another store or try again later."
+          );
+          return;
+        }
+      } catch {
+        // ignore, and place the order
+      }
+
       const result = await submitOrder({
         name: form.name,
         phone: user.phone,
         gender: user.gender,
         locationId,
         orderMode: mode,
-        paymentMethod,
+        paymentMethod: "cash", // customer pays at the shop
         deliveryAddress: needsAddress ? form.address : undefined,
         deliveryCity: needsAddress ? form.city : undefined,
         deliveryPincode: needsAddress ? form.pincode : undefined,
         items: cart,
         total: finalTotal,
         discount: discountAmount,
-        razorpayOrderId,
-        razorpayPaymentId: paymentId,
       });
 
       // Remember that this customer used the code (for once-per-customer codes).
@@ -218,8 +259,8 @@ export default function CheckoutPage() {
         await recordRedemption(appliedPromo.id, user.phone, result.billNo);
       }
 
-      // Reduce stock for every tracked item now that the order is
-      // confirmed — keeps admin and the site in sync automatically.
+      // Reduce stock for every tracked item now that the order is placed —
+      // keeps admin and the site in sync automatically.
       for (const item of cart) {
         try {
           await decrementStock(item.id, item.quantity);
@@ -230,20 +271,15 @@ export default function CheckoutPage() {
       }
 
       setPlacedBillNo(result.billNo);
+      setPlacedTotal(finalTotal);
       setOrderPlaced(true);
       clearCart();
     } catch (err) {
       console.error("Failed to save order:", err);
-      setPaymentError(
-        "Your payment succeeded, but we couldn't save your order. Please contact us with your payment ID: " + paymentId
-      );
+      setPaymentError("We couldn't place your order. Please try again.");
     } finally {
       setSavingOrder(false);
     }
-  };
-
-  const handlePaymentFailure = (error: string) => {
-    setPaymentError(error);
   };
 
   if (!isLoggedIn) {
@@ -274,15 +310,16 @@ export default function CheckoutPage() {
             </div>
           )}
 
-          <p className="text-black/60 mb-8 max-w-md">
-            Thank you for your order. Your desserts are being prepared with
-            love{" "}
-            {mode === "delivery"
-              ? "and will be on their way soon."
-              : mode === "pickup"
-              ? "and will be ready for pickup soon."
-              : "and will be served fresh at your table shortly."}
-          </p>
+          <div className="bg-white rounded-2xl px-6 py-4 mb-8 shadow-card max-w-md mx-auto">
+            <p className="text-black font-semibold">
+              Please pay ₹{placedTotal} at the shop
+            </p>
+            <p className="text-black/50 text-sm mt-1">
+              Show this bill number at the counter and pay there. Your desserts
+              will be served fresh.
+            </p>
+          </div>
+
           <button
             onClick={() => router.push("/")}
             className="bg-magenta text-white font-semibold px-8 py-3.5 rounded-full hover:bg-magenta-dark transition-colors"
@@ -324,24 +361,36 @@ export default function CheckoutPage() {
         </motion.h1>
 
         {/* Mode toggle */}
-        <div className="flex justify-start mb-8">
+        <div className="mb-8">
           <div className="inline-flex bg-white rounded-full p-1.5 shadow-card gap-1">
             {modes.map((m) => (
               <button
                 key={m.key}
                 type="button"
-                onClick={() => setMode(m.key)}
+                disabled={m.comingSoon}
+                onClick={() => !m.comingSoon && setMode(m.key)}
                 className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-colors ${
-                  mode === m.key
+                  m.comingSoon
+                    ? "text-black/30 cursor-not-allowed"
+                    : mode === m.key
                     ? "bg-magenta text-white shadow-premium"
                     : "text-black/60 hover:text-black"
                 }`}
               >
                 {m.label}
+                {m.comingSoon && (
+                  <span className="ml-2 rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-black/40">
+                    Soon
+                  </span>
+                )}
               </button>
             ))}
           </div>
+          <p className="mt-3 text-xs text-black/40">
+            Delivery and Pickup are coming soon. For now, place your order here and pay at the shop.
+          </p>
         </div>
+
         {isStoreClosed && (
           <div className="bg-red-50 border border-red-200 text-red-600 text-sm font-semibold px-5 py-4 rounded-2xl mb-6">
             {storeState.state === "closed" && storeState.source === "admin" ? (
@@ -354,6 +403,11 @@ export default function CheckoutPage() {
                 This store isn't taking orders right now. We're open daily from {HOURS_LABEL} —
                 please check back then.
               </>
+            )}
+            {openStores.length > 0 && (
+              <p className="mt-1 font-normal">
+                Open now: {openStores.map((s) => s.name).join(", ")}. Choose one of these stores to order.
+              </p>
             )}
           </div>
         )}
@@ -383,20 +437,42 @@ export default function CheckoutPage() {
                 Choose Store
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {STORE_LOCATIONS.map((loc) => (
-                  <button
-                    key={loc.id}
-                    type="button"
-                    onClick={() => setLocationId(loc.id)}
-                    className={`py-3 rounded-xl border-2 font-semibold text-sm transition-colors ${
-                      locationId === loc.id
-                        ? "border-magenta bg-magenta/5 text-magenta"
-                        : "border-black/10 text-black/60"
-                    }`}
-                  >
-                    {loc.name}
-                  </button>
-                ))}
+                {STORE_LOCATIONS.map((loc) => {
+                  const st = stateFor(loc.id);
+                  const closed = closuresLoaded && st.state === "closed";
+                  const note =
+                    st.state === "closed"
+                      ? st.source === "admin"
+                        ? st.reason || "Closed right now"
+                        : "Opens 2:00 PM"
+                      : "";
+
+                  return (
+                    <button
+                      key={loc.id}
+                      type="button"
+                      disabled={closed}
+                      onClick={() => {
+                        setLocationId(loc.id);
+                        setStorePicked(true);
+                      }}
+                      className={`py-3 px-2 rounded-xl border-2 font-semibold text-sm transition-colors ${
+                        closed
+                          ? "border-black/10 bg-black/5 text-black/30 cursor-not-allowed"
+                          : locationId === loc.id
+                          ? "border-magenta bg-magenta/5 text-magenta"
+                          : "border-black/10 text-black/60 hover:border-black/25"
+                      }`}
+                    >
+                      {loc.name}
+                      {closed && (
+                        <span className="mt-1 block text-[11px] font-medium normal-case text-red-400">
+                          Closed{note ? ` · ${note}` : ""}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -508,55 +584,23 @@ export default function CheckoutPage() {
               )}
             </div>
 
-            {/* Payment method */}
+            {/* Payment: pay at the shop */}
             <div className="bg-white rounded-3xl p-6 md:p-8 shadow-card">
-              <h2 className="text-lg font-bold text-black mb-5">
-                Payment Method
+              <h2 className="text-lg font-bold text-black mb-5 flex items-center gap-2">
+                <Store size={18} className="text-magenta" />
+                Payment
               </h2>
-              <div className="grid grid-cols-2 gap-4">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod("upi")}
-                  className={`flex items-center justify-center gap-2 py-4 rounded-xl border-2 font-semibold text-sm transition-colors ${
-                    paymentMethod === "upi"
-                      ? "border-magenta bg-magenta/5 text-magenta"
-                      : "border-black/10 text-black/60"
-                  }`}
-                >
-                  <Smartphone size={18} />
-                  UPI
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod("card")}
-                  className={`flex items-center justify-center gap-2 py-4 rounded-xl border-2 font-semibold text-sm transition-colors ${
-                    paymentMethod === "card"
-                      ? "border-magenta bg-magenta/5 text-magenta"
-                      : "border-black/10 text-black/60"
-                  }`}
-                >
-                  <CreditCard size={18} />
-                  Card
-                </button>
-              </div>
-              <p className="text-black/40 text-xs mt-4">
-                Secure payments powered by Razorpay. Both UPI and Card are
-                available in the payment window regardless of your selection
-                above.
-              </p>
-              {isDeliveryBlocked ? (
-                <p className="text-red-500 text-xs mt-3">
-                  Delivery isn't available beyond 4 km. Please switch to Pickup or Dine In above.
+              <div className="rounded-xl border-2 border-magenta bg-magenta/5 px-5 py-4">
+                <p className="text-sm font-semibold text-magenta">Pay at the shop</p>
+                <p className="mt-1 text-xs text-black/50">
+                  Online payment is coming soon. Place your order now, then come
+                  to the store and pay at the counter.
                 </p>
-              ) : (
-                !isFormValid && stockChecked && !hasStockIssues && (
-                  <p className="text-amber-600 text-xs mt-3">
-                    Please fill in your {needsAddress ? "delivery" : "contact"} details above to proceed to payment.
-                  </p>
-                )
-              )}
-              {savingOrder && (
-                <p className="text-black/50 text-xs mt-3">Saving your order...</p>
+              </div>
+              {!isFormValid && !isStoreClosed && stockChecked && !hasStockIssues && (
+                <p className="text-amber-600 text-xs mt-3">
+                  Please fill in your {needsAddress ? "delivery" : "contact"} details above to place the order.
+                </p>
               )}
               {paymentError && (
                 <div className="flex items-start gap-2 mt-4 bg-red-50 text-red-600 text-xs p-3 rounded-xl">
@@ -662,14 +706,15 @@ export default function CheckoutPage() {
             </div>
 
             <div className="mt-6">
-              <RazorpayButton
-                amount={finalTotal}
-                customerName={form.name}
-                customerPhone={user?.phone || ""}
-                onSuccess={handlePaymentSuccess}
-                onFailure={handlePaymentFailure}
+              <button
+                type="button"
+                onClick={handlePlaceOrder}
                 disabled={!isFormValid || savingOrder}
-              />
+                className="w-full flex items-center justify-center gap-2 bg-magenta text-white font-semibold py-4 rounded-full hover:bg-magenta-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {savingOrder && <Loader2 size={16} className="animate-spin" />}
+                Place order · pay ₹{finalTotal.toFixed(0)} at shop
+              </button>
             </div>
           </div>
         </div>
